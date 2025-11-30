@@ -1,8 +1,7 @@
-
 import React, { useState, useMemo } from 'react';
 import { Staff, Movement } from '../types';
-import { formatDate } from '../utils';
-import { FileText, Printer, Filter, Calendar, User, Download, MapPin } from 'lucide-react';
+import { formatDate, normalizeDate } from '../utils';
+import { FileText, Printer, Calendar, User, MapPin } from 'lucide-react';
 
 interface ReportsProps {
   staffList: Staff[];
@@ -24,19 +23,39 @@ const Reports: React.FC<ReportsProps> = ({ staffList, movements }) => {
 
   const years = [currentYear - 1, currentYear, currentYear + 1];
 
-  // Filter Logic
+  // LOGIK FILTER YANG DIPERKUKUHKAN
   const filteredData = useMemo(() => {
+    // 1. Tentukan tarikh mula dan akhir bagi BULAN yang dipilih
+    const monthStr = String(selectedMonth + 1).padStart(2, '0'); 
+    
+    // Hari pertama bulan tersebut (e.g., 2025-03-01)
+    const startOfMonthStr = `${selectedYear}-${monthStr}-01`;
+    
+    // Hari terakhir bulan tersebut
+    const lastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+    const endOfMonthStr = `${selectedYear}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
+
     return movements.filter(m => {
-      // Parse date safely from YYYY-MM-DD string
-      const dateParts = m.dateOut.split('T')[0].split('-');
-      const mYear = parseInt(dateParts[0]);
-      const mMonth = parseInt(dateParts[1]) - 1; // 0-indexed
+      // Filter Pegawai dulu
+      if (selectedStaffId !== 'all' && String(m.staffId) !== selectedStaffId) return false;
 
-      const matchDate = mYear === selectedYear && mMonth === selectedMonth;
-      const matchStaff = selectedStaffId === 'all' || String(m.staffId) === selectedStaffId;
+      // Bersihkan tarikh pergerakan (Pastikan format YYYY-MM-DD menggunakan regex baru dari utils.ts)
+      const mStart = normalizeDate(m.dateOut);
+      const mEnd = normalizeDate(m.dateReturn);
 
-      return matchDate && matchStaff;
-    }).sort((a, b) => new Date(a.dateOut).getTime() - new Date(b.dateOut).getTime());
+      // Jika tarikh rosak/kosong, skip
+      if (!mStart || !mEnd) return false;
+
+      // Formula Overlap:
+      // Adakah Movement Start <= Month End DAN Movement End >= Month Start?
+      // Logik string comparison YYYY-MM-DD kini berfungsi dengan tepat kerana padding '0' dijamin oleh utils.ts
+      const isOverlapping = (mStart <= endOfMonthStr) && (mEnd >= startOfMonthStr);
+
+      return isOverlapping;
+    }).sort((a, b) => {
+        // Sort mengikut tarikh keluar (Ascending)
+        return normalizeDate(a.dateOut).localeCompare(normalizeDate(b.dateOut));
+    });
   }, [movements, selectedMonth, selectedYear, selectedStaffId]);
 
   const handlePrint = () => {
@@ -155,40 +174,36 @@ const Reports: React.FC<ReportsProps> = ({ staffList, movements }) => {
                             <th className="py-3 px-4 font-bold border-r border-slate-300 w-48">Nama Pegawai</th>
                         )}
                         <th className="py-3 px-4 font-bold border-r border-slate-300">Lokasi & Tujuan</th>
-                        <th className="py-3 px-4 font-bold w-24 text-center">Status</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 border-b border-slate-200">
-                    {filteredData.map((m, index) => (
-                        <tr key={m.id} className="break-inside-avoid hover:bg-slate-50">
-                            <td className="py-3 px-4 border-r border-slate-200 text-center text-slate-500">{index + 1}</td>
-                            <td className="py-3 px-4 border-r border-slate-200 align-top">
-                                <div className="font-semibold text-slate-800 whitespace-nowrap">{formatDate(m.dateOut)}</div>
-                                {m.dateOut !== m.dateReturn && (
-                                    <div className="text-xs text-slate-500 mt-1">Hingga<br/>{formatDate(m.dateReturn)}</div>
-                                )}
-                            </td>
-                            {selectedStaffId === 'all' && (
-                                <td className="py-3 px-4 border-r border-slate-200 align-top font-medium text-slate-700">
-                                    {m.staffName}
+                    {filteredData.map((m, index) => {
+                        return (
+                            <tr key={m.id} className="break-inside-avoid hover:bg-slate-50">
+                                <td className="py-3 px-4 border-r border-slate-200 text-center text-slate-500">{index + 1}</td>
+                                <td className="py-3 px-4 border-r border-slate-200 align-top">
+                                    <div className="font-semibold text-slate-800 whitespace-nowrap">{formatDate(m.dateOut)}</div>
+                                    {m.dateOut !== m.dateReturn && (
+                                        <div className="text-xs text-slate-500 mt-1">Hingga<br/>{formatDate(m.dateReturn)}</div>
+                                    )}
                                 </td>
-                            )}
-                            <td className="py-3 px-4 border-r border-slate-200 align-top">
-                                <div className="font-bold text-slate-800 flex items-start gap-1 mb-1">
-                                    <MapPin size={14} className="mt-0.5 text-red-500 shrink-0"/> {m.location}, {m.state}
-                                </div>
-                                <div className="text-slate-600 italic leading-relaxed">"{m.purpose}"</div>
-                            </td>
-                            <td className="py-3 px-4 text-center align-top">
-                                <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-[10px] font-bold uppercase border border-slate-200">
-                                    Selesai
-                                </span>
-                            </td>
-                        </tr>
-                    ))}
+                                {selectedStaffId === 'all' && (
+                                    <td className="py-3 px-4 border-r border-slate-200 align-top font-medium text-slate-700">
+                                        {m.staffName}
+                                    </td>
+                                )}
+                                <td className="py-3 px-4 border-r border-slate-200 align-top">
+                                    <div className="font-bold text-slate-800 flex items-start gap-1 mb-1">
+                                        <MapPin size={14} className="mt-0.5 text-red-500 shrink-0"/> {m.location}, {m.state}
+                                    </div>
+                                    <div className="text-slate-600 italic leading-relaxed">"{m.purpose}"</div>
+                                </td>
+                            </tr>
+                        );
+                    })}
                     {filteredData.length === 0 && (
                         <tr>
-                            <td colSpan={selectedStaffId === 'all' ? 5 : 4} className="py-12 text-center text-slate-400 italic bg-slate-50/50">
+                            <td colSpan={selectedStaffId === 'all' ? 4 : 3} className="py-12 text-center text-slate-400 italic bg-slate-50/50">
                                 Tiada rekod pergerakan dijumpai untuk kriteria ini.
                             </td>
                         </tr>
