@@ -11,35 +11,43 @@ export const formatDate = (dateStr: string): string => {
   return dateStr;
 };
 
-// ULTRA ROBUST Date Normalizer
-// Fungsi ini memaksa apa sahaja input menjadi format YYYY-MM-DD
-// Menggunakan Regex untuk ketepatan yang lebih tinggi
+// ULTRA ROBUST Date Normalizer (Fixed Timezone Issue)
 export const normalizeDate = (dateStr: any): string => {
     if (dateStr === undefined || dateStr === null) return '';
     
     let s = String(dateStr).trim();
-    
-    // Buang invisible characters (BOM, zero-width space) yang mungkin datang dari copy-paste
+    // Buang invisible characters
     s = s.replace(/[\u200B-\u200D\uFEFF]/g, '');
 
-    // Regex 1: Format ISO atau Standard Database (YYYY-MM-DD atau YYYY/MM/DD)
-    // Contoh: "2025-2-1", "2025-02-01", "2025/02/01 10:00:00"
-    // Ditambah \s* untuk menangani typo spacing (cth: 2025 / 2 / 1)
-    const isoMatch = s.match(/^(\d{4})\s*[-/]\s*(\d{1,2})\s*[-/]\s*(\d{1,2})/);
-    if (isoMatch) {
-        // Group 1: Year, Group 2: Month, Group 3: Day
-        return `${isoMatch[1]}-${isoMatch[2].padStart(2,'0')}-${isoMatch[3].padStart(2,'0')}`;
+    // 1. PENTING: Kesan format ISO UTC (yang ada huruf 'T' dan 'Z')
+    // Ini WAJIB diletakkan paling atas supaya ia tidak dipotong oleh Regex di bawah
+    // Contoh dari Google Sheet: "2025-11-29T16:00:00.000Z" (Sebenarnya 30hb Malaysia)
+    if (s.includes('T') && (s.includes('Z') || s.includes('+'))) {
+        const d = new Date(s);
+        if (!isNaN(d.getTime())) {
+            // Tukar kepada tarikh LOKAL (Browser pengguna - Waktu Malaysia)
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        }
     }
 
-    // Regex 2: Format Malaysia/UK (DD-MM-YYYY atau DD/MM/YYYY)
-    // Contoh: "1-2-2025", "01/02/2025", "25/2/2025 08:30"
+    // 2. Format Malaysia/UK (DD/MM/YYYY atau DD-MM-YYYY)
+    // Contoh: "30/11/2025"
     const myMatch = s.match(/^(\d{1,2})\s*[-/]\s*(\d{1,2})\s*[-/]\s*(\d{4})/);
     if (myMatch) {
-        // Group 1: Day, Group 2: Month, Group 3: Year
         return `${myMatch[3]}-${myMatch[2].padStart(2,'0')}-${myMatch[1].padStart(2,'0')}`;
     }
 
-    // Fallback: Jika format pelik (contoh: "Feb 25 2025")
+    // 3. Format Standard (YYYY-MM-DD)
+    // Contoh: "2025-11-30"
+    const isoMatch = s.match(/^(\d{4})\s*[-/]\s*(\d{1,2})\s*[-/]\s*(\d{1,2})/);
+    if (isoMatch) {
+        return `${isoMatch[1]}-${isoMatch[2].padStart(2,'0')}-${isoMatch[3].padStart(2,'0')}`;
+    }
+
+    // 4. Fallback terakhir
     const d = new Date(s);
     if (!isNaN(d.getTime())) {
         const y = d.getFullYear();
@@ -48,7 +56,6 @@ export const normalizeDate = (dateStr: any): string => {
         return `${y}-${m}-${day}`;
     }
 
-    // Jika gagal, pulangkan string asal (untuk elak crash, walau data mungkin salah)
     return s;
 };
 
@@ -61,16 +68,13 @@ export const getTodayString = (): string => {
     return `${year}-${month}-${day}`;
 };
 
-// Helper to determine movement status (Simplified to 2 statuses)
+// Helper to determine movement status
 export const getMovementTimeStatus = (dateOut: string, dateReturn: string) => {
   const today = getTodayString();
   const end = normalizeDate(dateReturn);
 
-  // Jika tarikh akhir < hari ini (sudah lepas) -> SELESAI (Hijau)
   if (end < today) {
       return { label: 'SELESAI', color: 'bg-emerald-100 text-emerald-700 border border-emerald-200' };
   }
-  
-  // Jika hari ini <= tarikh akhir (sedang berlangsung atau akan datang) -> DALAM TUGAS (Merah)
   return { label: 'DALAM TUGAS', color: 'bg-red-100 text-red-700 border border-red-200' };
 };
