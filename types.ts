@@ -1,3 +1,4 @@
+
 export enum StaffStatus {
   IN_OFFICE = 'Dalam Pejabat',
   OUT_OF_OFFICE = 'Keluar',
