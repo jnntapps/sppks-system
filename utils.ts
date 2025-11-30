@@ -3,41 +3,74 @@
 export const formatDate = (dateStr: string): string => {
   if (!dateStr) return '-';
   
-  // Safe split: handle ISO T or space if present to clean time part
-  // Example: 2025-11-20T16:00:00.000Z -> 2025-11-20
-  let cleanDate = dateStr;
-  
-  if (typeof dateStr === 'string') {
-      if (dateStr.includes('T')) {
-          cleanDate = dateStr.split('T')[0];
-      } else if (dateStr.includes(' ')) {
-          cleanDate = dateStr.split(' ')[0];
-      }
+  const clean = normalizeDate(dateStr);
+  const parts = clean.split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
   }
-
-  const parts = cleanDate.split('-');
-  if (parts.length !== 3) return cleanDate; // Return original if not YYYY-MM-DD
-  
-  // Ensure we display DD/MM/YYYY
-  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  return dateStr;
 };
 
-// Helper to determine movement status (Active, Upcoming, Past)
+// ULTRA ROBUST Date Normalizer
+// Fungsi ini memaksa apa sahaja input menjadi format YYYY-MM-DD
+// Menggunakan Regex untuk ketepatan yang lebih tinggi
+export const normalizeDate = (dateStr: any): string => {
+    if (dateStr === undefined || dateStr === null) return '';
+    
+    let s = String(dateStr).trim();
+    
+    // Buang invisible characters (BOM, zero-width space) yang mungkin datang dari copy-paste
+    s = s.replace(/[\u200B-\u200D\uFEFF]/g, '');
+
+    // Regex 1: Format ISO atau Standard Database (YYYY-MM-DD atau YYYY/MM/DD)
+    // Contoh: "2025-2-1", "2025-02-01", "2025/02/01 10:00:00"
+    // Ditambah \s* untuk menangani typo spacing (cth: 2025 / 2 / 1)
+    const isoMatch = s.match(/^(\d{4})\s*[-/]\s*(\d{1,2})\s*[-/]\s*(\d{1,2})/);
+    if (isoMatch) {
+        // Group 1: Year, Group 2: Month, Group 3: Day
+        return `${isoMatch[1]}-${isoMatch[2].padStart(2,'0')}-${isoMatch[3].padStart(2,'0')}`;
+    }
+
+    // Regex 2: Format Malaysia/UK (DD-MM-YYYY atau DD/MM/YYYY)
+    // Contoh: "1-2-2025", "01/02/2025", "25/2/2025 08:30"
+    const myMatch = s.match(/^(\d{1,2})\s*[-/]\s*(\d{1,2})\s*[-/]\s*(\d{4})/);
+    if (myMatch) {
+        // Group 1: Day, Group 2: Month, Group 3: Year
+        return `${myMatch[3]}-${myMatch[2].padStart(2,'0')}-${myMatch[1].padStart(2,'0')}`;
+    }
+
+    // Fallback: Jika format pelik (contoh: "Feb 25 2025")
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+
+    // Jika gagal, pulangkan string asal (untuk elak crash, walau data mungkin salah)
+    return s;
+};
+
+// Get today's date as YYYY-MM-DD string in LOCAL time
+export const getTodayString = (): string => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+// Helper to determine movement status (Simplified to 2 statuses)
 export const getMovementTimeStatus = (dateOut: string, dateReturn: string) => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  
-  // Clean dates before parsing
-  const cleanOut = dateOut.split('T')[0];
-  const cleanRet = dateReturn.split('T')[0];
+  const today = getTodayString();
+  const end = normalizeDate(dateReturn);
 
-  const dOut = new Date(cleanOut);
-  dOut.setHours(0, 0, 0, 0);
+  // Jika tarikh akhir < hari ini (sudah lepas) -> SELESAI (Hijau)
+  if (end < today) {
+      return { label: 'SELESAI', color: 'bg-emerald-100 text-emerald-700 border border-emerald-200' };
+  }
   
-  const dRet = new Date(cleanRet);
-  dRet.setHours(0, 0, 0, 0);
-
-  if (today > dRet) return { label: 'TAMAT', color: 'bg-slate-100 text-slate-500' };
-  if (today < dOut) return { label: 'AKAN DATANG', color: 'bg-blue-100 text-blue-700' };
-  return { label: 'SEDANG BERLANGSUNG', color: 'bg-emerald-100 text-emerald-700 border border-emerald-200' };
+  // Jika hari ini <= tarikh akhir (sedang berlangsung atau akan datang) -> DALAM TUGAS (Merah)
+  return { label: 'DALAM TUGAS', color: 'bg-red-100 text-red-700 border border-red-200' };
 };
