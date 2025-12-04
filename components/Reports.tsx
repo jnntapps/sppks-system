@@ -1,19 +1,32 @@
 import React, { useState, useMemo } from 'react';
 import { Staff, Movement } from '../types';
-import { formatDate, normalizeDate } from '../utils';
-import { FileText, Printer, Calendar, User, MapPin } from 'lucide-react';
+import { formatDate, normalizeDate, getTodayString } from '../utils';
+import { FileText, Calendar, User, CalendarRange, ArrowRight, Filter, MapPin } from 'lucide-react';
 
 interface ReportsProps {
   staffList: Staff[];
   movements: Movement[];
 }
 
+type ReportType = 'monthly' | 'range';
+
 const Reports: React.FC<ReportsProps> = ({ staffList, movements }) => {
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth(); // 0-11
+  const todayStr = getTodayString();
 
+  // State
+  const [reportType, setReportType] = useState<ReportType>('monthly');
+  
+  // Monthly State
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [selectedYear, setSelectedYear] = useState(currentYear);
+  
+  // Range State
+  const [startDate, setStartDate] = useState(todayStr);
+  const [endDate, setEndDate] = useState(todayStr);
+
+  // Common State
   const [selectedStaffId, setSelectedStaffId] = useState<string>('all');
 
   const months = [
@@ -23,44 +36,41 @@ const Reports: React.FC<ReportsProps> = ({ staffList, movements }) => {
 
   const years = [currentYear - 1, currentYear, currentYear + 1];
 
-  // LOGIK FILTER YANG DIPERKUKUHKAN
+  // LOGIK FILTER
   const filteredData = useMemo(() => {
-    // 1. Tentukan tarikh mula dan akhir bagi BULAN yang dipilih
-    const monthStr = String(selectedMonth + 1).padStart(2, '0'); 
-    
-    // Hari pertama bulan tersebut (e.g., 2025-03-01)
-    const startOfMonthStr = `${selectedYear}-${monthStr}-01`;
-    
-    // Hari terakhir bulan tersebut
-    const lastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
-    const endOfMonthStr = `${selectedYear}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
+    let startRangeStr = '';
+    let endRangeStr = '';
+
+    if (reportType === 'monthly') {
+        const monthStr = String(selectedMonth + 1).padStart(2, '0');
+        startRangeStr = `${selectedYear}-${monthStr}-01`;
+        const lastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+        endRangeStr = `${selectedYear}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
+    } else {
+        startRangeStr = startDate;
+        endRangeStr = endDate;
+    }
 
     return movements.filter(m => {
       // Filter Pegawai dulu
       if (selectedStaffId !== 'all' && String(m.staffId) !== selectedStaffId) return false;
 
-      // Bersihkan tarikh pergerakan (Pastikan format YYYY-MM-DD menggunakan regex baru dari utils.ts)
+      // Bersihkan tarikh pergerakan
       const mStart = normalizeDate(m.dateOut);
       const mEnd = normalizeDate(m.dateReturn);
 
       // Jika tarikh rosak/kosong, skip
       if (!mStart || !mEnd) return false;
 
-      // Formula Overlap:
-      // Adakah Movement Start <= Month End DAN Movement End >= Month Start?
-      // Logik string comparison YYYY-MM-DD kini berfungsi dengan tepat kerana padding '0' dijamin oleh utils.ts
-      const isOverlapping = (mStart <= endOfMonthStr) && (mEnd >= startOfMonthStr);
+      // Formula Overlap: (MovementStart <= RangeEnd) && (MovementEnd >= RangeStart)
+      const isOverlapping = (mStart <= endRangeStr) && (mEnd >= startRangeStr);
 
       return isOverlapping;
     }).sort((a, b) => {
         // Sort mengikut tarikh keluar (Ascending)
         return normalizeDate(a.dateOut).localeCompare(normalizeDate(b.dateOut));
     });
-  }, [movements, selectedMonth, selectedYear, selectedStaffId]);
-
-  const handlePrint = () => {
-    window.print();
-  };
+  }, [movements, reportType, selectedMonth, selectedYear, startDate, endDate, selectedStaffId]);
 
   const getStaffName = (id: string) => {
       const staff = staffList.find(s => String(s.id) === String(id));
@@ -70,55 +80,99 @@ const Reports: React.FC<ReportsProps> = ({ staffList, movements }) => {
   return (
     <div className="space-y-6 animate-fade-in pb-16">
       
-      {/* Controls - Hidden when printing */}
-      <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-slate-200 print:hidden">
-        <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-6">
-            <div>
-                <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                    <FileText className="text-blue-600"/> Laporan Bulanan
-                </h2>
-                <p className="text-slate-500 text-sm">Jana laporan pergerakan mengikut bulan dan pegawai.</p>
-            </div>
+      {/* Controls */}
+      <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-slate-200">
+        <div className="mb-6">
+            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <FileText className="text-blue-600"/> Laporan Pergerakan
+            </h2>
+            <p className="text-slate-500 text-sm">Lihat rekod pergerakan mengikut bulan atau julat tarikh.</p>
+        </div>
+
+        {/* Tab Pilihan Jenis Laporan */}
+        <div className="flex p-1 bg-slate-100 rounded-lg mb-6 w-full md:w-fit">
             <button 
-                onClick={handlePrint}
-                className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
+                onClick={() => setReportType('monthly')}
+                className={`flex-1 md:flex-none px-4 py-2 text-sm font-medium rounded-md transition-all flex items-center justify-center gap-2 ${reportType === 'monthly' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
-                <Printer size={18} /> Cetak / PDF
+                <Calendar size={16}/> Laporan Bulanan
+            </button>
+            <button 
+                onClick={() => setReportType('range')}
+                className={`flex-1 md:flex-none px-4 py-2 text-sm font-medium rounded-md transition-all flex items-center justify-center gap-2 ${reportType === 'range' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+                <CalendarRange size={16}/> Julat Tarikh
             </button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Year Selector */}
-            <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-500 uppercase">Tahun</label>
-                <div className="relative">
-                    <Calendar className="absolute left-3 top-2.5 text-slate-400" size={18}/>
-                    <select 
-                        value={selectedYear}
-                        onChange={(e) => setSelectedYear(Number(e.target.value))}
-                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none appearance-none bg-white"
-                    >
-                        {years.map(y => <option key={y} value={y}>{y}</option>)}
-                    </select>
-                </div>
-            </div>
+            
+            {/* Conditional Inputs based on Report Type */}
+            {reportType === 'monthly' ? (
+                <>
+                    {/* Year Selector */}
+                    <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-500 uppercase">Tahun</label>
+                        <div className="relative">
+                            <Calendar className="absolute left-3 top-2.5 text-slate-400" size={18}/>
+                            <select 
+                                value={selectedYear}
+                                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none appearance-none bg-white"
+                            >
+                                {years.map(y => <option key={y} value={y}>{y}</option>)}
+                            </select>
+                        </div>
+                    </div>
 
-            {/* Month Selector */}
-            <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-500 uppercase">Bulan</label>
-                <div className="relative">
-                    <Calendar className="absolute left-3 top-2.5 text-slate-400" size={18}/>
-                    <select 
-                        value={selectedMonth}
-                        onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                        className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none appearance-none bg-white"
-                    >
-                        {months.map((m, idx) => <option key={idx} value={idx}>{m}</option>)}
-                    </select>
-                </div>
-            </div>
+                    {/* Month Selector */}
+                    <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-500 uppercase">Bulan</label>
+                        <div className="relative">
+                            <Calendar className="absolute left-3 top-2.5 text-slate-400" size={18}/>
+                            <select 
+                                value={selectedMonth}
+                                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none appearance-none bg-white"
+                            >
+                                {months.map((m, idx) => <option key={idx} value={idx}>{m}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                </>
+            ) : (
+                <>
+                    {/* Start Date */}
+                    <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-500 uppercase">Dari Tarikh</label>
+                        <div className="relative">
+                            <Calendar className="absolute left-3 top-2.5 text-slate-400" size={18}/>
+                            <input 
+                                type="date"
+                                value={startDate}
+                                onChange={(e) => setStartDate(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                            />
+                        </div>
+                    </div>
 
-            {/* Staff Selector */}
+                    {/* End Date */}
+                    <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-500 uppercase">Hingga Tarikh</label>
+                        <div className="relative">
+                            <Calendar className="absolute left-3 top-2.5 text-slate-400" size={18}/>
+                            <input 
+                                type="date"
+                                value={endDate}
+                                onChange={(e) => setEndDate(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                            />
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {/* Staff Selector (Always Visible) */}
             <div className="space-y-1">
                 <label className="text-xs font-semibold text-slate-500 uppercase">Pegawai</label>
                 <div className="relative">
@@ -137,28 +191,40 @@ const Reports: React.FC<ReportsProps> = ({ staffList, movements }) => {
       </div>
 
       {/* Report Paper View */}
-      <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200 min-h-[600px] print:shadow-none print:border-none print:p-0">
+      <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200 min-h-[600px]">
         
         {/* Report Header */}
         <div className="text-center border-b border-slate-800 pb-6 mb-6">
             <h1 className="text-2xl font-bold text-slate-900 uppercase tracking-wide mb-2">Laporan Pergerakan Pegawai</h1>
             <h2 className="text-lg font-semibold text-slate-600">Jemaah Nazir Negeri Terengganu</h2>
-            <div className="mt-4 inline-block bg-slate-100 px-6 py-2 rounded-full border border-slate-200 print:bg-transparent print:border-none">
-                <span className="font-bold text-slate-800">{months[selectedMonth]} {selectedYear}</span>
+            
+            <div className="mt-4 flex flex-col items-center gap-2">
+                {reportType === 'monthly' ? (
+                     <div className="inline-block bg-slate-100 px-6 py-2 rounded-full border border-slate-200">
+                        <span className="font-bold text-slate-800">{months[selectedMonth]} {selectedYear}</span>
+                     </div>
+                ) : (
+                    <div className="inline-flex items-center gap-2 bg-slate-100 px-6 py-2 rounded-full border border-slate-200">
+                        <span className="font-bold text-slate-800">{formatDate(startDate)}</span>
+                        <ArrowRight size={16} className="text-slate-400"/>
+                        <span className="font-bold text-slate-800">{formatDate(endDate)}</span>
+                    </div>
+                )}
+                
                 {selectedStaffId !== 'all' && (
-                    <span className="text-slate-600 block text-sm mt-1">{getStaffName(selectedStaffId)}</span>
+                    <span className="text-slate-600 font-medium">{getStaffName(selectedStaffId)}</span>
                 )}
             </div>
         </div>
 
         {/* Stats Summary */}
-        <div className="grid grid-cols-2 gap-4 mb-8 print:mb-6">
-             <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 print:border-slate-300">
+        <div className="grid grid-cols-2 gap-4 mb-8">
+             <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
                 <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Jumlah Pergerakan</p>
                 <p className="text-2xl font-bold text-slate-800">{filteredData.length}</p>
              </div>
-             <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 print:border-slate-300">
-                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Tarikh Cetakan</p>
+             <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
+                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Tarikh Dijana</p>
                 <p className="text-lg font-semibold text-slate-800">{new Date().toLocaleDateString('ms-MY')}</p>
              </div>
         </div>
@@ -180,7 +246,7 @@ const Reports: React.FC<ReportsProps> = ({ staffList, movements }) => {
                     {filteredData.map((m, index) => {
                         return (
                             <tr key={m.id} className="break-inside-avoid hover:bg-slate-50">
-                                <td className="py-3 px-4 border-r border-slate-200 text-center text-slate-500">{index + 1}</td>
+                                <td className="py-3 px-4 border-r border-slate-200 text-center text-slate-500 align-top">{index + 1}</td>
                                 <td className="py-3 px-4 border-r border-slate-200 align-top">
                                     <div className="font-semibold text-slate-800 whitespace-nowrap">{formatDate(m.dateOut)}</div>
                                     {m.dateOut !== m.dateReturn && (
@@ -211,19 +277,10 @@ const Reports: React.FC<ReportsProps> = ({ staffList, movements }) => {
                 </tbody>
             </table>
         </div>
-
-        {/* Footer Signature Area (Print Only) */}
-        <div className="hidden print:flex justify-between mt-16 pt-8 border-t border-slate-300 break-inside-avoid">
-            <div className="text-center w-64">
-                <p className="text-xs text-slate-500 mb-16">Disediakan Oleh:</p>
-                <div className="border-t border-slate-400 w-full"></div>
-                <p className="text-sm font-bold mt-2 text-slate-800">(PENTADBIR SISTEM)</p>
-            </div>
-            <div className="text-center w-64">
-                <p className="text-xs text-slate-500 mb-16">Disahkan Oleh:</p>
-                <div className="border-t border-slate-400 w-full"></div>
-                <p className="text-sm font-bold mt-2 text-slate-800">(KETUA JABATAN)</p>
-            </div>
+        
+        {/* Footer */}
+        <div className="mt-8 text-center text-slate-400 text-xs italic">
+            Paparan Laporan Tamat.
         </div>
       </div>
     </div>
